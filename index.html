@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teachable Classifier (TF.js)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.2.0/dist/tf.min.js"></script>
+    <style>
+        /* Custom styles for better aesthetics */
+        :root {
+            --primary: #4f46e5;
+            --primary-light: #6366f1;
+            --background: #f8fafc;
+            --card: white;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: var(--background); }
+        .btn-primary { background-color: var(--primary); transition: all 0.15s; }
+        .btn-primary:hover { background-color: var(--primary-light); transform: translateY(-1px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); }
+        .card { background-color: var(--card); border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1); }
+        .progress-bar { transition: width 0.3s ease-in-out; }
+        /* Hide the actual video element, use canvas for visual */
+        #webcamVideo { display: none; }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+
+    <header class="text-center mb-8">
+        <h1 class="text-4xl font-extrabold text-gray-900">Teachable Classifier (Transfer Learning)</h1>
+        <p class="text-lg text-gray-500 mt-2">Collect data, train, and predict in your browser.</p>
+        <p class="text-sm text-blue-600 mt-2">Using **MobileNetV2** for fast and effective **Feature Extraction**.</p>
+    </header>
+
+    <main class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
+
+        <div class="lg:col-span-1 space-y-8">
+            <div class="card p-6">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-800">1. Define Classes & Collect Data</h2>
+                
+                <div id="classInputArea" class="flex space-x-2 mb-4">
+                    <input type="text" id="newClassName" placeholder="e.g., Cat or Dog" class="flex-grow p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary">
+                    <button onclick="addClass()" class="btn-primary text-white px-4 py-2 rounded-lg font-medium shadow-lg">Add Class</button>
+                </div>
+
+                <div id="classesContainer" class="space-y-4">
+                    </div>
+
+                <div class="mt-6 border-t pt-4">
+                    <button id="toggleWebcam" onclick="toggleWebcam()" class="w-full btn-primary text-white px-4 py-2 rounded-lg font-medium shadow-md">
+                        Start Webcam
+                    </button>
+                    <video id="webcamVideo" width="224" height="224" autoplay muted playsinline class="mt-4 rounded-lg"></video>
+                    <canvas id="webcamCanvas" width="224" height="224" class="w-full h-auto mt-4 rounded-lg border border-gray-300 hidden"></canvas>
+                </div>
+            </div>
+            
+            <div class="card p-6">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-800">2. Training Control</h2>
+                <div class="mb-4 flex items-center justify-between">
+                    <label for="epochs" class="font-medium text-gray-700">Epochs:</label>
+                    <input type="number" id="epochs" value="20" min="1" max="100" class="w-20 p-1 border border-gray-300 rounded-lg text-center">
+                </div>
+                <button id="trainButton" onclick="startTraining()" disabled class="w-full btn-primary text-white px-4 py-3 rounded-lg font-bold shadow-xl disabled:opacity-50">
+                    Train Model
+                </button>
+            </div>
+        </div>
+
+        <div class="lg:col-span-1 space-y-8">
+            <div class="card p-6">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-800">Training Progress & Metrics</h2>
+                
+                <div id="trainingStatus" class="space-y-3">
+                    <p class="text-gray-600"><span class="font-bold">Status:</span> <span id="statusText" class="text-yellow-600">Loading MobileNetV2...</span></p>
+                    <p class="text-gray-600"><span class="font-bold">Classes:</span> <span id="numClasses">0</span></p>
+                    <p class="text-gray-600"><span class="font-bold">Total Samples:</span> <span id="totalSamples">0</span></p>
+
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Epoch Progress:</label>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            <div id="epochProgressBar" class="bg-primary h-2.5 rounded-full progress-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="metrics" class="mt-6 border-t pt-4 hidden">
+                    <h3 class="text-xl font-medium mb-3 text-gray-700">Evaluation Results:</h3>
+                    <p class="text-gray-800"><span class="font-bold">Final Accuracy (on training set):</span> <span id="finalAccuracy" class="text-green-600 font-extrabold">--</span></p>
+                    <div id="confusionMatrixContainer" class="mt-4">
+                        <h4 class="font-semibold text-gray-700 mb-2">Confusion Matrix (Training Data):</h4>
+                        <table class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg overflow-hidden">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">True Class</th>
+                                    </tr>
+                            </thead>
+                            <tbody id="cmBody" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-1 space-y-8">
+            <div class="card p-6">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-800">3. Real-time Prediction</h2>
+                
+                <canvas id="predictionCanvas" width="224" height="224" class="w-full h-auto rounded-lg border-2 border-dashed border-gray-400 mb-4"></canvas>
+                
+                <div id="predictionResults" class="space-y-3">
+                    <p class="text-lg font-bold text-gray-700 mb-2">Prediction:</p>
+                    <div id="predictionBars" class="space-y-2">
+                         <p class="text-gray-500">Train model to start predicting.</p>
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-4 border-t">
+                    <h3 class="font-semibold text-gray-700 mb-2">Test with Uploaded Image:</h3>
+                    <input type="file" id="testImageUpload" accept="image/*" onchange="testUploadedImage(event)" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary-light file:text-white hover:file:bg-primary-light">
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- Global State and Initialization ---
+        const IMAGE_SIZE = 224;
+        // CLASSES array will store feature tensors for training.
+        const CLASSES = []; 
+        
+        let webcamStream = null;
+        let isWebcamActive = false;
+        let isTrained = false;
+        let transferModel; // The sequential classification head model
+        let baseModel; // MobileNetV2 for feature extraction
+        
+        // DOM Elements (For quick reference)
+        const webcamVideo = document.getElementById('webcamVideo');
+        const webcamCanvas = document.getElementById('webcamCanvas');
+        const predictionCanvas = document.getElementById('predictionCanvas');
+        const classesContainer = document.getElementById('classesContainer');
+        const toggleWebcamBtn = document.getElementById('toggleWebcam');
+        const trainButton = document.getElementById('trainButton');
+        const statusText = document.getElementById('statusText');
+        const numClassesSpan = document.getElementById('numClasses');
+        const totalSamplesSpan = document.getElementById('totalSamples');
+        const epochProgressBar = document.getElementById('epochProgressBar');
+        const predictionBars = document.getElementById('predictionBars');
+        const finalAccuracySpan = document.getElementById('finalAccuracy');
+        const cmBody = document.getElementById('cmBody');
+
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', async () => {
+            statusText.textContent = "Loading MobileNetV2 (Transfer Learning Base)...";
+            
+            // Load MobileNetV2 pre-trained model for feature extraction
+            baseModel = await tf.loadGraphModel(
+                'https://tfhub.dev/google/tfjs-model/imagenet/mobilenet_v2_100_224/feature_extractor/1/default/1',
+                { fromTFHub: true }
+            );
+            
+            // Warmup the model with a dummy tensor
+            tf.tidy(() => {
+                const dummyInput = tf.zeros([1, IMAGE_SIZE, IMAGE_SIZE, 3]);
+                baseModel.predict(dummyInput);
+            });
+            statusText.textContent = "MobileNetV2 loaded. Ready to collect data.";
+        });
+        
+        // --- Helper Functions ---
+
+        function updateTrainButtonState() {
+            const totalSamples = CLASSES.reduce((sum, cls) => sum + cls.data.length, 0);
+            const minSamplesPerClass = 5;
+            const minClasses = 2;
+            const meetsRequirements = CLASSES.length >= minClasses && 
+                                      CLASSES.every(cls => cls.data.length >= minSamplesPerClass);
+            
+            if (meetsRequirements) {
+                trainButton.disabled = false;
+                statusText.textContent = `Minimum data met! Ready to train ${CLASSES.length} classes. Total Samples: ${totalSamples}`;
+            } else {
+                trainButton.disabled = true;
+                statusText.textContent = `Collect at least ${minSamplesPerClass} samples for minimum ${minClasses} classes.`;
+            }
+            totalSamplesSpan.textContent = totalSamples;
+            numClassesSpan.textContent = CLASSES.length;
+        }
+
+        // Converts an HTML element (video, image, canvas) to a normalized tensor
+        function preprocess(imgElement) {
+            return tf.tidy(() => {
+                const img = tf.browser.fromPixels(imgElement).toFloat();
+                // Resize to 224x224 and normalize to [-1, 1] as required by MobileNetV2
+                const resized = tf.image.resizeBilinear(img, [IMAGE_SIZE, IMAGE_SIZE]);
+                const normalized = resized.div(255).sub(0.5).mul(2);
+                // Add a batch dimension (1, 224, 224, 3)
+                return normalized.expandDims(0); 
+            });
+        }
+
+        // Function to extract and store features
+        function extractAndStoreFeatures(imgElement, classId) {
+            const targetClass = CLASSES.find(c => c.id === classId);
+            if (!targetClass) return;
+
+            // Extract features using MobileNetV2
+            const featureTensor = tf.tidy(() => {
+                const preprocessedImage = preprocess(imgElement);
+                // The output of baseModel is the feature vector
+                // Squeeze removes the batch dimension [1, 7, 7, 1280] -> [7, 7, 1280]
+                const features = baseModel.predict(preprocessedImage).squeeze();
+                // We return this tensor to be stored in CLASSES.data
+                return features;
+            });
+            
+            // CRITICAL FIX: The tensor is stored alive, NOT disposed here.
+            targetClass.data.push(featureTensor);
+
+            // Update UI count
+            document.getElementById(targetClass.labelElementId).textContent = `${targetClass.data.length} samples`;
+        }
+        
+        // --- Class Management & Data Collection ---
+
+        function addClass() {
+            const nameInput = document.getElementById('newClassName');
+            const className = nameInput.value.trim();
+            if (!className || CLASSES.some(c => c.name.toLowerCase() === className.toLowerCase())) {
+                alert("Please enter a unique class name.");
+                return;
+            }
+
+            const newClass = {
+                id: CLASSES.length,
+                name: className,
+                data: [], // Stores feature tensors
+                labelElementId: `label-count-${CLASSES.length}`
+            };
+            CLASSES.push(newClass);
+            nameInput.value = '';
+            renderClassUI(newClass);
+            updateTrainButtonState();
+        }
+
+        function renderClassUI(cls) {
+            const classDiv = document.createElement('div');
+            classDiv.id = `class-${cls.id}`;
+            classDiv.className = 'p-3 border border-gray-200 rounded-lg bg-white space-y-2';
+            classDiv.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-medium text-gray-900">${cls.name}</h3>
+                    <span id="${cls.labelElementId}" class="text-sm font-bold text-primary-light">${cls.data.length} samples</span>
+                </div>
+                <div class="flex space-x-2">
+                    <button onclick="captureSample(${cls.id})" class="flex-1 bg-green-500 text-white p-2 rounded-lg text-sm font-medium hover:bg-green-600">
+                        Capture from Webcam
+                    </button>
+                    <input type="file" accept="image/*" multiple onchange="uploadSamples(event, ${cls.id})" class="hidden" id="upload-${cls.id}">
+                    <label for="upload-${cls.id}" class="flex-1 text-center bg-blue-500 text-white p-2 rounded-lg text-sm font-medium cursor-pointer hover:bg-blue-600">
+                        Upload Images
+                    </label>
+                </div>
+            `;
+            classesContainer.appendChild(classDiv);
+        }
+
+        async function uploadSamples(event, classId) {
+            const files = event.target.files;
+            if (!files.length) return;
+
+            const targetClass = CLASSES.find(c => c.id === classId);
+            if (!targetClass) return;
+            
+            statusText.textContent = `Processing ${files.length} uploads for ${targetClass.name}...`;
+
+            for (const file of files) {
+                await new Promise(resolve => {
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            extractAndStoreFeatures(img, classId);
+                            resolve();
+                        };
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+            statusText.textContent = `Finished processing uploads for ${targetClass.name}.`;
+            updateTrainButtonState();
+        }
+
+        function captureSample(classId) {
+            if (!isWebcamActive) {
+                alert("Please start the webcam first!");
+                return;
+            }
+            if (CLASSES.length === 0) return;
+
+            // Use the hidden video element to capture the frame
+            extractAndStoreFeatures(webcamVideo, classId);
+            updateTrainButtonState();
+        }
+        
+        // --- Webcam Control ---
+
+        async function toggleWebcam() {
+            if (isWebcamActive) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                webcamVideo.srcObject = null;
+                webcamCanvas.classList.add('hidden');
+                toggleWebcamBtn.textContent = 'Start Webcam';
+                isWebcamActive = false;
+                if (window.animationFrame) cancelAnimationFrame(window.animationFrame);
+            } else {
+                try {
+                    const constraints = { video: { width: IMAGE_SIZE, height: IMAGE_SIZE } };
+                    webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    webcamVideo.srcObject = webcamStream;
+                    webcamCanvas.classList.remove('hidden');
+                    webcamVideo.onloadedmetadata = () => {
+                        webcamVideo.play();
+                        // Start the loop to show video on canvas and predict
+                        renderWebcamFrame();
+                    };
+                    toggleWebcamBtn.textContent = 'Stop Webcam';
+                    isWebcamActive = true;
+                } catch (error) {
+                    statusText.textContent = 'Error accessing webcam: ' + error.message;
+                    console.error('Error accessing webcam:', error);
+                }
+            }
+        }
+        
+        function renderWebcamFrame() {
+            const ctx = webcamCanvas.getContext('2d');
+            ctx.drawImage(webcamVideo, 0, 0, IMAGE_SIZE, IMAGE_SIZE);
+            if (isTrained) {
+                predictWebcam();
+            }
+            window.animationFrame = requestAnimationFrame(renderWebcamFrame);
+        }
+
+
+        // --- Training Logic (Transfer Learning) ---
+        
+        function createTransferModel() {
+            // Check if model already exists and dispose of it
+            if (transferModel) {
+                transferModel.dispose();
+            }
+
+            const featureShape = baseModel.outputs[0].shape.slice(1); // Feature vector shape (e.g., [7, 7, 1280])
+            const numClasses = CLASSES.length;
+            
+            // Build the classification head model
+            transferModel = tf.sequential({
+                layers: [
+                    // Flatten the feature vector (e.g., 7*7*1280 = 62720)
+                    tf.layers.flatten({ inputShape: featureShape }),
+                    // A dense layer for classification
+                    tf.layers.dense({ units: 100, activation: 'relu' }),
+                    // The final dense layer with number of classes and softmax activation
+                    tf.layers.dense({ units: numClasses, activation: 'softmax' })
+                ]
+            });
+
+            // Compile the model
+            transferModel.compile({
+                optimizer: tf.train.adam(0.0001),
+                loss: 'categoricalCrossentropy',
+                metrics: ['accuracy']
+            });
+            
+            return transferModel;
+        }
+
+        async function startTraining() {
+            if (CLASSES.length < 2) {
+                 alert("Need at least 2 classes to train!");
+                 return;
+            }
+            
+            trainButton.disabled = true;
+            statusText.textContent = "Creating model and preparing data...";
+
+            const model = createTransferModel();
+            const epochs = parseInt(document.getElementById('epochs').value) || 20;
+
+            // 1. Combine all features and labels (using tf.tidy to manage temporary tensors)
+            let xs, ys;
+            
+            tf.tidy(() => {
+                let featureTensors = [];
+                let labelTensors = [];
+
+                CLASSES.forEach(cls => {
+                    cls.data.forEach(feature => {
+                        // The feature tensor is already stored in cls.data
+                        featureTensors.push(feature);
+                        // Create one-hot encoded label (e.g., [0, 1, 0])
+                        labelTensors.push(tf.oneHot(cls.id, CLASSES.length));
+                    });
+                });
+
+                // Stack tensors to create combined dataset.
+                xs = tf.stack(featureTensors);
+                ys = tf.stack(labelTensors);
+            });
+            
+            // Note: xs and ys are NOT disposed inside tf.tidy because we need them for training/evaluation
+            
+            statusText.textContent = `Training started for ${epochs} epochs...`;
+
+            // 2. Train the model
+            await model.fit(xs, ys, {
+                batchSize: 32,
+                epochs: epochs,
+                shuffle: true, // Important for better training
+                callbacks: {
+                    onEpochEnd: (epoch, logs) => {
+                        const accuracy = logs.acc ? (logs.acc * 100).toFixed(2) : 'N/A';
+                        const loss = logs.loss ? logs.loss.toFixed(4) : 'N/A';
+                        statusText.textContent = `Epoch ${epoch + 1}/${epochs}: Loss ${loss} | Acc ${accuracy}%`;
+                        epochProgressBar.style.width = `${((epoch + 1) / epochs) * 100}%`;
+                    },
+                    onTrainEnd: async () => {
+                        statusText.textContent = "Training complete!";
+                        isTrained = true;
+                        trainButton.disabled = false;
+                        
+                        // 3. Evaluation
+                        const evaluation = await model.evaluate(xs, ys, { batchSize: 32 });
+                        const finalAcc = (evaluation[1].dataSync()[0] * 100).toFixed(2);
+                        finalAccuracySpan.textContent = `${finalAcc}%`;
+                        document.getElementById('metrics').classList.remove('hidden');
+                        
+                        // 4. Generate Confusion Matrix
+                        await generateConfusionMatrix(model, xs, ys);
+
+                        // CRITICAL FIX: Dispose of the training data tensors after use
+                        xs.dispose();
+                        ys.dispose();
+                        
+                        // Update prediction area
+                        predictionBars.innerHTML = '<p class="text-green-600 font-bold">Model ready for prediction!</p>';
+                    }
+                }
+            });
+        }
+        
+        async function generateConfusionMatrix(model, xs, ys) {
+            const predictions = tf.tidy(() => model.predict(xs)); // Softmax output
+
+            const predictedClasses = predictions.argMax(1).dataSync();
+            const trueClasses = ys.argMax(1).dataSync();
+            
+            const numClasses = CLASSES.length;
+            const matrix = Array(numClasses).fill(0).map(() => Array(numClasses).fill(0));
+
+            for (let i = 0; i < predictedClasses.length; i++) {
+                matrix[trueClasses[i]][predictedClasses[i]]++;
+            }
+
+            // Render CM table headers
+            const headerCells = CLASSES.map(cls => 
+                `<th class="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider text-center" colspan="1">P: ${cls.name.substring(0, 5)}</th>`
+            ).join('');
+            
+            document.getElementById('cmBody').innerHTML = '';
+
+            // Render CM table rows
+            matrix.forEach((row, i) => {
+                const trueClassName = CLASSES[i].name;
+                const rowHtml = `
+                    <tr class="hover:bg-gray-100">
+                        <td class="px-2 py-1 whitespace-nowrap text-sm font-medium text-gray-900 bg-gray-50 border-r">T: ${trueClassName}</td>
+                        ${row.map((val, j) => 
+                            `<td class="px-2 py-1 whitespace-nowrap text-sm text-center font-bold ${i === j ? 'text-green-600 bg-green-50' : 'text-red-600'}">${val}</td>`
+                        ).join('')}
+                    </tr>
+                `;
+                document.getElementById('cmBody').innerHTML += rowHtml;
+            });
+            
+            predictions.dispose();
+        }
+
+        // --- Prediction Logic ---
+
+        async function predict(inputElement) {
+            if (!transferModel || !isTrained) {
+                predictionBars.innerHTML = '<p class="text-red-500">Model not trained. Please train first.</p>';
+                return;
+            }
+            
+            tf.tidy(() => {
+                // 1. Preprocess the image and get features
+                const inputTensor = preprocess(inputElement);
+                const features = baseModel.predict(inputTensor);
+
+                // 2. Predict using the classification head
+                const predictions = transferModel.predict(features).dataSync();
+
+                // 3. Process results
+                const results = predictions.map((probability, index) => ({
+                    name: CLASSES[index].name,
+                    probability: probability
+                })).sort((a, b) => b.probability - a.probability);
+
+                // 4. Update UI
+                renderPrediction(results, inputElement);
+                
+                // Tensors created in this tf.tidy block will be disposed automatically
+            });
+        }
+        
+        function renderPrediction(results, inputElement) {
+            // Draw the image/frame onto the prediction canvas
+            const ctx = predictionCanvas.getContext('2d');
+            ctx.drawImage(inputElement, 0, 0, predictionCanvas.width, predictionCanvas.height);
+            
+            predictionBars.innerHTML = results.map(result => {
+                const percent = (result.probability * 100).toFixed(1);
+                const barColor = result.probability > 0.5 ? 'bg-primary' : 'bg-gray-300';
+                return `
+                    <div>
+                        <div class="flex justify-between mb-1 text-sm font-medium text-gray-700">
+                            <span>${result.name}</span>
+                            <span>${percent}%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            <div class="h-2.5 rounded-full ${barColor} progress-bar" style="width: ${percent}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Highlight the predicted class on the canvas
+            const topResult = results[0];
+            ctx.fillStyle = topResult.probability > 0.7 ? 'rgba(79, 70, 229, 0.7)' : 'rgba(234, 179, 8, 0.7)';
+            ctx.fillRect(0, predictionCanvas.height - 30, predictionCanvas.width * topResult.probability, 30);
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 16px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(`${topResult.name} (${(topResult.probability * 100).toFixed(1)}%)`, 5, predictionCanvas.height - 10);
+        }
+
+        function predictWebcam() {
+            // Predict from the canvas which is continuously updated by renderWebcamFrame
+            if (isWebcamActive && isTrained) {
+                 // Use webcamCanvas as the input element
+                predict(webcamCanvas);
+            }
+        }
+        
+        async function testUploadedImage(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    // Draw image to canvas for visual display and prediction input
+                    const ctx = predictionCanvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, predictionCanvas.width, predictionCanvas.height);
+                    predict(img);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // --- Cleanup (Important for memory management) ---
+        window.onunload = () => {
+            if (transferModel) transferModel.dispose();
+            if (baseModel) baseModel.dispose();
+            
+            // Dispose of all stored feature tensors
+            CLASSES.forEach(cls => {
+                cls.data.forEach(tensor => tensor.dispose());
+            });
+            
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+            }
+            if (window.animationFrame) cancelAnimationFrame(window.animationFrame);
+        };
+
+    </script>
+</body>
+</html>
